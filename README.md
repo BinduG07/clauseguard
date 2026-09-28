@@ -1,77 +1,100 @@
-# ClauseGuard — Multi-Agent Legal Contract Reviewer
+# ClauseGuard: Multi-Agent Contract Risk Reviewer
 
-AI system that extracts clauses from a contract, retrieves similar standard
-clauses, flags risk (Rules + ML classifier + LLM fallback), and generates a
-structured risk report.
+ClauseGuard reads a contract clause by clause and flags the ones that look risky. It combines keyword rules, a trained ML classifier, semantic retrieval and an LLM fallback whose answers must quote the source text. It is a first-pass check, not a replacement for a lawyer.
 
-## Architecture
-Extractor → Retriever (FAISS + Sentence-BERT) → Risk-Flagger (Rules + XGBoost + Groq LLM) → Summarizer
-Orchestrated with **LangGraph**.
+## Demo
+
+| Upload or paste a contract      | Risk summary                          |
+| ------------------------------- | ------------------------------------- |
+| ![Home](screenshots/1-home.png) | ![Summary](screenshots/2-summary.png) |
+
+| Clause-by-clause results              | Agent output                      |
+| ------------------------------------- | --------------------------------- |
+| ![Clauses](screenshots/3-clauses.png) | ![Trace](screenshots/4-trace.png) |
+
+## How it works
+
+```
+Contract text -> Extractor -> Retriever -> Risk-Flagger -> Summarizer -> Report
+```
+
+| Agent        | What it does                                                                                                                     | Tools                |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| Extractor    | Splits the contract into clauses using heading patterns                                                                          | Python, regex        |
+| Retriever    | Finds the most similar reference clause                                                                                          | Sentence-BERT, FAISS |
+| Risk-Flagger | Labels each clause using three layers, in order: keyword rules, then an XGBoost classifier, then an LLM when the model is unsure | XGBoost, Groq LLM    |
+| Summarizer   | Builds a report sorted by risk                                                                                                   | LangGraph            |
+
+The LLM must return an exact quote from the clause as evidence. If the quote is not found in the clause text, the answer is rejected and the clause is sent to human review. If the API call fails, the clause is also sent to human review instead of being retried silently.
+
+## Results
+
+Data: 10,114 clauses from the [CUAD](https://github.com/TheAtticusProject/cuad) dataset (8,833 Standard, 1,281 High-Risk). 80/20 stratified split.
+
+- 5-fold cross-validated weighted F1: **0.872 ± 0.006**
+- Held-out accuracy: **0.90**
+
+Ablation on the held-out set, High-Risk class:
+
+| Approach            | Precision | Recall | F1   |
+| ------------------- | --------- | ------ | ---- |
+| Keyword rules only  | 0.13      | 0.02   | 0.03 |
+| ML classifier only  | 0.77      | 0.26   | 0.39 |
+| Rules + ML combined | 0.57      | 0.28   | 0.37 |
+
+**Finding:** letting the keyword rules override the ML model lowered precision (0.77 to 0.57) for only a small gain in recall, so the combined system did not beat the ML model alone.
+
+## Limitations
+
+- **Low recall on high-risk clauses (26%).** The model misses most of them, largely because of class imbalance. A contract with few red flags is not necessarily safe.
+- **Labels are heuristic.** "High-Risk" is assigned from the CUAD clause category (for example non-compete or exclusivity), not from lawyers judging each clause.
+- **Scope.** Trained on US-style English commercial contracts. It is weaker on rental, employment or non-English contracts, and it cannot read scanned PDFs.
+- The LLM hallucination-rejection rate has not been measured yet.
 
 ## Setup
 
 ```bash
+git clone https://github.com/BinduG07/clauseguard.git
 cd clauseguard
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+python -m venv venv
+venv\Scripts\activate          # Mac/Linux: source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Get a free Groq API key from https://console.groq.com and set it:
-```bash
-export GROQ_API_KEY=your_key_here     # Windows: set GROQ_API_KEY=your_key_here
-```
-
-## Get the dataset
-Download `CUAD_v1.json` from https://github.com/TheAtticusProject/cuad
-(see their releases / data folder) and place it at:
-```
-clauseguard/data/CUAD_v1.json
-```
-
-## Run order (do these once, in order)
+1. Copy `.env.example` to `.env` and add your free Groq API key from console.groq.com.
+2. Download `CUAD_v1.json` from the CUAD repository and put it in `data/`.
+3. Build the data and models (run once):
 
 ```bash
 cd src
-python data_prep.py          # Step 1: flatten CUAD into clauses_flat.csv
-python embeddings.py         # Step 2: build FAISS index over reference clauses
-python train_classifier.py   # Step 3: train XGBoost risk classifier + SHAP + ablation
-```
-
-## Try the pipeline on a sample contract
-```bash
-python pipeline.py           # runs the 4-agent graph on a built-in sample
-```
-
-## Launch the demo UI
-```bash
+python data_prep.py
+python embeddings.py
+python train_classifier.py
 cd ..
+```
+
+4. Start the dashboard:
+
+```bash
 streamlit run app.py
 ```
 
-## What to measure for your report / resume bullets
-- **Segmentation accuracy** — hand-label ~20-30 real contracts, compare
-  against `extractor.py`'s output using `evaluate_segmentation()`.
-- **Classifier performance** — cross-val F1 and held-out precision/recall,
-  printed by `train_classifier.py`.
-- **Ablation table** — rules-only vs ML-only vs combined, also printed by
-  `train_classifier.py` (`run_ablation()`).
-- **Hallucination rate** — log how often `risk_flagger.py`'s LLM step gets
-  rejected by the citation-verification check (`source: llm_rejected`) vs
-  accepted, before/after you tighten the prompt.
+## Project structure
 
-## Folder structure
 ```
 clauseguard/
-├── data/                 # CUAD_v1.json goes here; clauses_flat.csv generated
-├── models/               # FAISS index, trained classifier, SHAP artifacts
+├── app.py                 # Streamlit dashboard
 ├── src/
-│   ├── data_prep.py      # Step 1
-│   ├── embeddings.py     # Step 2
-│   ├── train_classifier.py  # Step 3
-│   ├── extractor.py      # Extractor agent
-│   ├── risk_flagger.py   # Risk-Flagger agent (rules + ML + LLM)
-│   └── pipeline.py       # LangGraph orchestration (all 4 agents)
-├── app.py                # Streamlit demo
+│   ├── data_prep.py       # CUAD -> labeled clauses
+│   ├── embeddings.py      # Sentence-BERT + FAISS index
+│   ├── train_classifier.py# XGBoost, SHAP, ablation
+│   ├── extractor.py       # clause segmentation
+│   ├── risk_flagger.py    # rules + ML + LLM fallback
+│   └── pipeline.py        # LangGraph graph
+├── screenshots/
 └── requirements.txt
 ```
+
+## Tech stack
+
+Python, LangGraph, FAISS, Sentence-Transformers, XGBoost, SHAP, Groq API, Streamlit
