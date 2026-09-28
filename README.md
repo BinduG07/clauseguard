@@ -4,13 +4,16 @@ ClauseGuard reads a contract clause by clause and flags the ones that look risky
 
 ## Demo
 
-| Upload or paste a contract      | Risk summary                          |
-| ------------------------------- | ------------------------------------- |
-| ![Home](screenshots/1-home.png) | ![Summary](screenshots/2-summary.png) |
-
-| Clause-by-clause results              | Agent output                      |
-| ------------------------------------- | --------------------------------- |
-| ![Clauses](screenshots/3-clauses.png) | ![Trace](screenshots/4-trace.png) |
+<table>
+  <tr>
+    <td width="50%"><img src="screenshots/1-home.png" alt="Home page"><br><sub>Home: upload a PDF, paste text or pick a sample</sub></td>
+    <td width="50%"><img src="screenshots/2-sample-loaded.png" alt="Sample loaded"><br><sub>Sample contract loaded</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="screenshots/3-results-summary.png" alt="Results summary"><br><sub>Risk summary and flagged clauses</sub></td>
+    <td width="50%"><img src="screenshots/4-clause-cards.png" alt="Clause cards"><br><sub>Standard clauses and report download</sub></td>
+  </tr>
+</table>
 
 ## How it works
 
