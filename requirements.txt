@@ -1,0 +1,13 @@
+pandas
+numpy
+scikit-learn
+xgboost
+shap
+sentence-transformers
+faiss-cpu
+langgraph
+langchain-core
+groq
+streamlit
+PyPDF2
+python-dotenv
